@@ -11,6 +11,13 @@ from .enums import NumberingLevel, StyleAttributes
 from .parsers import infer_header_level_letter, infer_header_level_numerical, infer_header_level_roman
 from .types.hierarchical_header import HierarchicalHeader
 
+# GPU acceleration with cuML (optional)
+
+import cupy as cp
+from cuml.cluster import HDBSCAN as cuHDBSCAN
+from cuml.preprocessing import StandardScaler as cuStandardScaler
+GPU_AVAILABLE = True
+
 
 class InconsistentNumberingException(Exception):
     def __init__(self) -> None:
@@ -257,7 +264,73 @@ class DocumentHierarchyBuilder:
 
         return root
 
+    def _cluster_headings_gpu(self) -> dict[int, int]:
+        """GPU-accelerated clustering using cuML HDBSCAN.
+        
+        Uses HDBSCAN which automatically determines optimal clustering parameters,
+        eliminating the need for grid search. Runs on NVIDIA GPU via RAPIDS cuML.
+        """
+        if len(self.headings) < 2:
+            return dict.fromkeys(range(len(self.headings)), 1)
+
+        # Move data to GPU
+        features = cp.array(
+            [[el[StyleAttributes.font_size]] for el in self.style_features],
+            dtype=cp.float32
+        )
+
+        # Scale features on GPU
+        scaler = cuStandardScaler()
+        features_scaled = scaler.fit_transform(features)
+
+        # HDBSCAN auto-tunes parameters - no grid search needed!
+        clusterer = cuHDBSCAN(
+            min_cluster_size=2,
+            min_samples=1,
+            metric='euclidean',
+            cluster_selection_method='eom'
+        )
+        labels = clusterer.fit_predict(features_scaled)
+
+        # Move results back to CPU
+        labels_cpu = cp.asnumpy(labels)
+
+        # Map clusters to hierarchy levels based on average font size
+        cluster_stats = {}
+        for cluster_id in np.unique(labels_cpu):
+            if cluster_id == -1:
+                continue  # Skip noise points for now
+            mask = labels_cpu == cluster_id
+            cluster_headings = [self.headings[i] for i in range(len(self.headings)) if mask[i]]
+            avg_font_size = np.mean([h["font_size"] for h in cluster_headings])
+            cluster_stats[cluster_id] = avg_font_size
+
+        # Sort clusters by font size (largest = level 1)
+        sorted_clusters = sorted(cluster_stats.items(), key=lambda x: x[1], reverse=True)
+        cluster_to_level = {cluster_id: level + 1 for level, (cluster_id, _) in enumerate(sorted_clusters)}
+        
+        # Assign noise points (-1) to the lowest level
+        if -1 in labels_cpu:
+            cluster_to_level[-1] = len(cluster_to_level) + 1
+
+        # Create mapping from heading index to hierarchy level
+        heading_to_level = {}
+        for i, cluster_id in enumerate(labels_cpu):
+            heading_to_level[i] = cluster_to_level.get(cluster_id, len(cluster_to_level))
+
+        return heading_to_level
+
     def _cluster_headings_dbscan(self) -> dict[int, int]:
+        """Cluster headings by font size to determine hierarchy levels.
+        
+        Automatically uses GPU acceleration if cuML is available,
+        otherwise falls back to CPU-based DBSCAN with grid search.
+        """
+        # Use GPU if available
+        if GPU_AVAILABLE:
+            return self._cluster_headings_gpu()
+
+        # CPU fallback: original DBSCAN implementation with grid search
         style_features = self.style_features
 
         if len(self.headings) < 2:
@@ -284,7 +357,7 @@ class DocumentHierarchyBuilder:
                     if best_score is None or score > best_score:
                         best_score = score
                         best_params = (eps, min_samples)
-        # print("best parameters", best_params)
+
         dbscan = DBSCAN(eps=best_params[0], min_samples=best_params[1])
         cluster_labels = dbscan.fit_predict(features_scaled)
 
@@ -294,7 +367,6 @@ class DocumentHierarchyBuilder:
             mask = cluster_labels == cluster_id
             cluster_headings = [self.headings[i] for i in range(len(self.headings)) if mask[i]]
             avg_font_size = np.mean([h["font_size"] for h in cluster_headings])
-            # print("cluster mean: ", np.mean([h['font_size'] for h in cluster_headings]), "std:", np.std([h['font_size'] for h in cluster_headings]))
             cluster_stats[cluster_id] = avg_font_size
 
         # Sort clusters by font size (largest = level 1)
