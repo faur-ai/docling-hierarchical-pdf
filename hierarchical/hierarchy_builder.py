@@ -271,6 +271,13 @@ class DocumentHierarchyBuilder:
         eliminating the need for grid search. Runs on NVIDIA GPU via RAPIDS cuML.
         """
         import cupy as cp
+        try:
+            cp.cuda.Device(0).use()
+            # Clear any stale memory
+            mempool = cp.get_default_memory_pool()
+            mempool.free_all_blocks()
+        except cp.cuda.runtime.CUDARuntimeError:
+            raise RuntimeError("No GPU available for cuML clustering.")
         from cuml.cluster import HDBSCAN as cuHDBSCAN
         from cuml.preprocessing import StandardScaler as cuStandardScaler
  
