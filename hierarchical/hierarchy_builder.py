@@ -267,6 +267,7 @@ class DocumentHierarchyBuilder:
         Uses HDBSCAN which automatically determines optimal clustering parameters,
         eliminating the need for grid search. Runs on NVIDIA GPU via RAPIDS cuML.
         """
+        print("Using GPU-accelerated clustering with cuML HDBSCAN.")
         import cupy as cp
         try:
             cp.cuda.Device(0).use()
