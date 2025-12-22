@@ -13,9 +13,6 @@ from .types.hierarchical_header import HierarchicalHeader
 
 # GPU acceleration with cuML (optional)
 
-import cupy as cp
-from cuml.cluster import HDBSCAN as cuHDBSCAN
-from cuml.preprocessing import StandardScaler as cuStandardScaler
 GPU_AVAILABLE = True
 
 
