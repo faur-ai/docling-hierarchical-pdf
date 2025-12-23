@@ -11,11 +11,6 @@ from .enums import NumberingLevel, StyleAttributes
 from .parsers import infer_header_level_letter, infer_header_level_numerical, infer_header_level_roman
 from .types.hierarchical_header import HierarchicalHeader
 
-# GPU acceleration with cuML (optional)
-
-    GPU_AVAILABLE = True
-except (ImportError, Exception):
-    GPU_AVAILABLE = False
 
 
 class InconsistentNumberingException(Exception):
@@ -347,8 +342,7 @@ class DocumentHierarchyBuilder:
         otherwise falls back to CPU-based DBSCAN with grid search.
         """
         # Use GPU if available
-        if GPU_AVAILABLE:
-            return self._cluster_headings_gpu()
+        return self._cluster_headings_gpu()
 
         # CPU fallback: original DBSCAN implementation with grid search
         style_features = self.style_features
