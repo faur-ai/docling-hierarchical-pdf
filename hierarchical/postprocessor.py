@@ -145,7 +145,7 @@ class ResultPostprocessor:
         current_header = root
         new_parent_ref = None
 
-        processed: list[str] = []
+        processed: set[str] = set()
         last_len_processed = -1
         while last_len_processed < len(processed):
             last_len_processed = len(processed)
@@ -202,4 +202,4 @@ class ResultPostprocessor:
                     else:
                         raise ItemNotRegisteredAsChildException(item)
                     break
-                processed.append(item.self_ref)
+                processed.add(item.self_ref)
