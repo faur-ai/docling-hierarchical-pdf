@@ -1,0 +1,88 @@
+# Use NVIDIA CUDA base image with Ubuntu 24.04
+FROM nvidia/cuda:13.0.1-cudnn-runtime-ubuntu24.04
+
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+### Install Python 3.13 from deadsnakes PPA and system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    software-properties-common \
+    ca-certificates \
+    curl \
+    git \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3.13 \
+    python3.13-venv \
+    python3.13-dev \
+    libcairo2-dev \
+    poppler-utils \
+    libgl1 \
+    libglib2.0-0 \
+    libreoffice-writer \
+    libreoffice-script-provider-python \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create and activate virtual environment
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3.13 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Upgrade pip in the venv
+RUN pip install --upgrade pip
+
+# Set the working directory
+WORKDIR /app
+
+# Copy ONLY the requirements file to leverage Docker layer caching
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Install PyTorch with CUDA 13.0 support
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+
+# Install PaddlePaddle with CUDA support
+RUN pip install --no-cache-dir paddlepaddle-gpu==3.2.2 -i https://www.paddlepaddle.org.cn/packages/stable/cu130/
+
+# Install docling from private GitHub repo using build-time secret (faur_pipeline branch)
+# Use --force-reinstall to override any version that might have been pulled by dependencies
+RUN --mount=type=secret,id=github_token \
+    pip install --force-reinstall "git+https://$(cat /run/secrets/github_token)@github.com/faur-ai/docling.git@faur_pipeline"
+
+RUN --mount=type=secret,id=github_token \
+    pip install --force-reinstall "git+https://$(cat /run/secrets/github_token)@github.com/faur-ai/docling-hierarchical-pdf.git@gpu"
+
+# Install faur-middleware from private GitHub repo using build-time secret
+RUN --mount=type=secret,id=github_token \
+    pip install "git+https://$(cat /run/secrets/github_token)@github.com/faur-ai/faur-middleware.git"
+
+COPY ./paddle_ocr_plugin /app/paddle_ocr_plugin
+RUN pip install -e /app/paddle_ocr_plugin
+
+COPY ./olmo_table_plugin /app/olmo_table_plugin
+RUN pip install -e /app/olmo_table_plugin
+
+### Link Python to the UNO library via PYTHONPATH (avoids .pth import hook issues)
+RUN python -c 'import site; open(f"{site.getsitepackages()[0]}/libreoffice.pth", "w").write("/usr/lib/python3/dist-packages")'
+
+### Solve the GLIBCXX library conflict
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
+
+# Copy the faur_ocr application code into the container
+COPY ./faur_ocr /app/faur_ocr
+
+# Create directories that the application uses for input relative to the WORKDIR
+RUN mkdir -p /app/input
+
+# Copy and set up the entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Expose the port the app runs on
+EXPOSE 8069
+
+# Define the entrypoint and command
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["uvicorn", "faur_ocr.mainv2:app", "--host", "0.0.0.0", "--port", "8069"]

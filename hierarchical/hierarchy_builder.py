@@ -262,12 +262,11 @@ class DocumentHierarchyBuilder:
         return root
 
     def _cluster_headings_gpu(self) -> dict[int, int]:
-        """GPU-accelerated clustering using cuML HDBSCAN.
+        """GPU-accelerated clustering using cuML DBSCAN.
         
-        Uses HDBSCAN which automatically determines optimal clustering parameters,
-        eliminating the need for grid search. Runs on NVIDIA GPU via RAPIDS cuML.
+        Uses the same DBSCAN algorithm and grid search as the CPU version,
+        but runs on NVIDIA GPU via RAPIDS cuML for speedup.
         """
-        print("Using GPU-accelerated clustering with cuML HDBSCAN.")
         import cupy as cp
         try:
             cp.cuda.Device(0).use()
@@ -276,8 +275,9 @@ class DocumentHierarchyBuilder:
             mempool.free_all_blocks()
         except cp.cuda.runtime.CUDARuntimeError:
             raise RuntimeError("No GPU available for cuML clustering.")
-        from cuml.cluster import HDBSCAN as cuHDBSCAN
+        from cuml.cluster import DBSCAN as cuDBSCAN
         from cuml.preprocessing import StandardScaler as cuStandardScaler
+        from cuml.metrics.cluster import silhouette_score as cu_silhouette_score
  
         if len(self.headings) < 2:
             return dict.fromkeys(range(len(self.headings)), 1)
@@ -292,23 +292,36 @@ class DocumentHierarchyBuilder:
         scaler = cuStandardScaler()
         features_scaled = scaler.fit_transform(features)
 
-        # HDBSCAN auto-tunes parameters - no grid search needed!
-        clusterer = cuHDBSCAN(
-            min_cluster_size=2,
-            min_samples=1,
-            metric='euclidean',
-            cluster_selection_method='eom'
-        )
-        labels = clusterer.fit_predict(features_scaled)
+        # Same grid search as CPU version
+        min_samples_grid = list(range(1, min(len(self.headings), 4)))
+        eps_grid = cp.arange(0.05, 0.21, 0.01)
 
-        # Move results back to CPU
+        best_score = None
+        best_params = (float(eps_grid[0]), min_samples_grid[0])
+        
+        for eps in eps_grid:
+            eps_val = float(eps)
+            for min_samples in min_samples_grid:
+                dbscan = cuDBSCAN(eps=eps_val, min_samples=min_samples)
+                labels = dbscan.fit_predict(features_scaled)
+                labels_cpu = cp.asnumpy(labels)
+                n_clusters = len(set(labels_cpu)) - (1 if -1 in labels_cpu else 0)
+                
+                if n_clusters > 1 and n_clusters != len(labels_cpu):
+                    # silhouette_score needs numpy arrays
+                    score = cu_silhouette_score(features_scaled, labels)
+                    if best_score is None or score > best_score:
+                        best_score = score
+                        best_params = (eps_val, min_samples)
+
+        # Final clustering with best params
+        dbscan = cuDBSCAN(eps=best_params[0], min_samples=best_params[1])
+        labels = dbscan.fit_predict(features_scaled)
         labels_cpu = cp.asnumpy(labels)
 
-        # Map clusters to hierarchy levels based on average font size
+        # Map clusters to hierarchy levels based on average font size (same as CPU)
         cluster_stats = {}
         for cluster_id in np.unique(labels_cpu):
-            if cluster_id == -1:
-                continue  # Skip noise points for now
             mask = labels_cpu == cluster_id
             cluster_headings = [self.headings[i] for i in range(len(self.headings)) if mask[i]]
             avg_font_size = np.mean([h["font_size"] for h in cluster_headings])
@@ -317,15 +330,11 @@ class DocumentHierarchyBuilder:
         # Sort clusters by font size (largest = level 1)
         sorted_clusters = sorted(cluster_stats.items(), key=lambda x: x[1], reverse=True)
         cluster_to_level = {cluster_id: level + 1 for level, (cluster_id, _) in enumerate(sorted_clusters)}
-        
-        # Assign noise points (-1) to the lowest level
-        if -1 in labels_cpu:
-            cluster_to_level[-1] = len(cluster_to_level) + 1
 
         # Create mapping from heading index to hierarchy level
         heading_to_level = {}
         for i, cluster_id in enumerate(labels_cpu):
-            heading_to_level[i] = cluster_to_level.get(cluster_id, len(cluster_to_level))
+            heading_to_level[i] = cluster_to_level[cluster_id]
 
         return heading_to_level
 
