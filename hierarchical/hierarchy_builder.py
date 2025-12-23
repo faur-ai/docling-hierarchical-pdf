@@ -13,7 +13,9 @@ from .types.hierarchical_header import HierarchicalHeader
 
 # GPU acceleration with cuML (optional)
 
-GPU_AVAILABLE = True
+    GPU_AVAILABLE = True
+except (ImportError, Exception):
+    GPU_AVAILABLE = False
 
 
 class InconsistentNumberingException(Exception):
