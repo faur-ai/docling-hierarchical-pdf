@@ -1,6 +1,9 @@
+import cProfile
+import pstats
 from functools import cached_property
 from io import BytesIO
 from pathlib import PurePath
+from pstats import SortKey
 from typing import Optional, Union
 
 from docling.datamodel.base_models import DocumentStream
@@ -128,7 +131,16 @@ class ResultPostprocessor:
         return items
 
     def process(self) -> None:  # noqa: C901
+        # Step 1: HierarchyBuilderMetadata initialization
+        pr1 = cProfile.Profile()
+        pr1.enable()
         hbm = HierarchyBuilderMetadata(self.result, self.source, self.raise_on_error)
+        pr1.disable()
+        pstats.Stats(pr1).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+
+        # Step 2: TOC inference or creation
+        pr2 = cProfile.Profile()
+        pr2.enable()
         header_correction = False
         if len(hbm.toc) > 0:
             root = hbm.infer()
@@ -136,15 +148,30 @@ class ResultPostprocessor:
         else:
             headings = self.get_headers()
             root = create_toc(headings)
+        pr2.disable()
+        pstats.Stats(pr2).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+
         doc = self.result.document
-        # convert structure back to heading levels
+
+        # Step 3: Flatten hierarchy tree
+        pr3 = cProfile.Profile()
+        pr3.enable()
         flat_hierarchy = flatten_hierarchy_tree(root, 0)
-        # enable lookup by index
+        pr3.disable()
+        pstats.Stats(pr3).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+
+        # Step 4: Build by_ref lookup
+        pr4 = cProfile.Profile()
+        pr4.enable()
         by_ref = {el[0].doc_ref: el for el in flat_hierarchy}
-        # maybe it is enough to alter the parent, pop the element from the current parent's children and add them to the new parent's children?
+        pr4.disable()
+        pstats.Stats(pr4).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+
+        # Step 5: Main iteration loop
+        pr5 = cProfile.Profile()
+        pr5.enable()
         current_header = root
         new_parent_ref = None
-
         processed: set[str] = set()
         last_len_processed = -1
         while last_len_processed < len(processed):
@@ -153,12 +180,10 @@ class ResultPostprocessor:
                 if item.self_ref in processed:
                     continue
                 if isinstance(item, SectionHeaderItem) and item.self_ref not in by_ref and header_correction:
-                    # convert SectionHeaderItem to TextItem
                     text_item = TextItem(
                         label=DocItemLabel.TEXT,
                         **{k: v for k, v in item.model_dump().items() if k != "label" and k in TextItem.model_fields},
                     )
-                    # now swap the reference to SectionHeaderItem with the one of text_item in the doc.
                     set_item_in_doc(doc, text_item)
                     item = text_item
                 if item.self_ref in by_ref:
@@ -169,10 +194,8 @@ class ResultPostprocessor:
                                 for k, v in item.model_dump().items()
                                 if k != "label" and k in SectionHeaderItem.model_fields
                             })
-                            # in case heading was numbered and the text was intepreted as a listitem
                             if isinstance(item, ListItem):
                                 header_item.text = header_item.orig
-                            # now swap the reference to TextItem with the one of header_item in the doc.
                             set_item_in_doc(doc, header_item)
                             item = header_item
                         else:
@@ -187,7 +210,6 @@ class ResultPostprocessor:
                 elif current_header.doc_ref is not None:
                     if isinstance(item, SectionHeaderItem):
                         item.level = level + 1
-                    # restructuring is needed
                     new_parent_ref = RefItem(cref=current_header.doc_ref)
                 if new_parent_ref is not None and item.parent is None:
                     raise ItemNotRegisteredAsChildException(item)
@@ -203,3 +225,5 @@ class ResultPostprocessor:
                         raise ItemNotRegisteredAsChildException(item)
                     break
                 processed.add(item.self_ref)
+        pr5.disable()
+        pstats.Stats(pr5).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
