@@ -130,13 +130,23 @@ class ResultPostprocessor:
             return self._get_headers_document()
         return items
 
-    def process(self) -> None:  # noqa: C901
+    def process(self, profile_output: Optional[str] = None) -> None:  # noqa: C901
+        profile_file = open(profile_output, "w") if profile_output else None
+
+        def write_profile(profiler: cProfile.Profile, step_name: str) -> None:
+            if profile_file:
+                profile_file.write(f"\n{'='*70}\n")
+                profile_file.write(f"PROFILE: {step_name}\n")
+                profile_file.write(f"{'='*70}\n")
+                pstats.Stats(profiler, stream=profile_file).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+                profile_file.flush()
+
         # Step 1: HierarchyBuilderMetadata initialization
         pr1 = cProfile.Profile()
         pr1.enable()
         hbm = HierarchyBuilderMetadata(self.result, self.source, self.raise_on_error)
         pr1.disable()
-        pstats.Stats(pr1).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+        write_profile(pr1, "Step 1: HierarchyBuilderMetadata init")
 
         # Step 2: TOC inference or creation
         pr2 = cProfile.Profile()
@@ -149,7 +159,7 @@ class ResultPostprocessor:
             headings = self.get_headers()
             root = create_toc(headings)
         pr2.disable()
-        pstats.Stats(pr2).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+        write_profile(pr2, "Step 2: TOC inference/creation")
 
         doc = self.result.document
 
@@ -158,14 +168,14 @@ class ResultPostprocessor:
         pr3.enable()
         flat_hierarchy = flatten_hierarchy_tree(root, 0)
         pr3.disable()
-        pstats.Stats(pr3).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+        write_profile(pr3, "Step 3: flatten_hierarchy_tree")
 
         # Step 4: Build by_ref lookup
         pr4 = cProfile.Profile()
         pr4.enable()
         by_ref = {el[0].doc_ref: el for el in flat_hierarchy}
         pr4.disable()
-        pstats.Stats(pr4).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+        write_profile(pr4, "Step 4: by_ref lookup build")
 
         # Step 5: Main iteration loop
         pr5 = cProfile.Profile()
@@ -226,4 +236,6 @@ class ResultPostprocessor:
                     break
                 processed.add(item.self_ref)
         pr5.disable()
-        pstats.Stats(pr5).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+        write_profile(pr5, "Step 5: Main iteration loop")
+        if profile_file:
+            profile_file.close()
