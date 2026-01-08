@@ -1,3 +1,4 @@
+from collections import deque
 import cProfile
 import pstats
 from functools import cached_property
@@ -183,12 +184,15 @@ class ResultPostprocessor:
         # pr5.enable()
         current_header = root
         new_parent_ref = None
-        iterator = list(self.result.document.iterate_items(with_groups=True))
+        level = 0
+        processed: set[str] = set()
+        to_process = deque(self.result.document.iterate_items(with_groups=True))
 
-        # First pass: process items and collect all reparenting moves
-        moves: list[tuple[DocItem, RefItem, RefItem]] = []  # (item, old_parent_ref, new_parent_ref)
-
-        for item, _ in iterator:
+        while to_process:
+            print(len(to_process))
+            item, item_level = to_process.popleft()
+            if item.self_ref in processed:
+                continue
             if isinstance(item, SectionHeaderItem) and item.self_ref not in by_ref and header_correction:
                 text_item = TextItem(
                     label=DocItemLabel.TEXT,
@@ -224,26 +228,19 @@ class ResultPostprocessor:
             if new_parent_ref is not None and item.parent is None:
                 raise ItemNotRegisteredAsChildException(item)
             if new_parent_ref is not None and item.parent is not None and item.parent.cref == doc.body.self_ref:
-                # Collect the move instead of applying immediately
-                moves.append((item, item.parent, new_parent_ref))
-
-        # Second pass: apply all reparenting moves
-        # Build index of children positions for efficient removal
-        body_children_index = {c.cref: i for i, c in enumerate(doc.body.children)}
-
-        # Process moves in reverse order of original index to maintain valid indices during removal
-        indexed_moves = [(body_children_index.get(item.self_ref, -1), item, old_ref, new_ref) 
-                         for item, old_ref, new_ref in moves]
-        indexed_moves.sort(reverse=True, key=lambda x: x[0])
-
-        for idx, item, old_parent_ref, new_parent_ref in indexed_moves:
-            if idx < 0:
-                raise ItemNotRegisteredAsChildException(item)
-            old_parent = old_parent_ref.resolve(doc)
-            new_parent = new_parent_ref.resolve(doc)
-            child_ref = old_parent.children.pop(idx)
-            item.parent = new_parent_ref
-            new_parent.children.append(child_ref)
+                old_parent = item.parent.resolve(doc)
+                new_parent = new_parent_ref.resolve(doc)
+                item_i = [i for i, c in enumerate(old_parent.children) if c.cref == item.self_ref]
+                if item_i:
+                    child_ref = old_parent.children.pop(item_i[0])
+                    item.parent = new_parent_ref
+                    new_parent.children.append(child_ref)
+                    # Re-add this item to reprocess with new parent context
+                    to_process.appendleft((item, item_level))
+                else:
+                    raise ItemNotRegisteredAsChildException(item)
+                continue  # Skip marking as processed, will process again
+            processed.add(item.self_ref)
         # pr5.disable()
         # write_profile(pr5, "Step 5: Main iteration loop")
         if profile_file:
