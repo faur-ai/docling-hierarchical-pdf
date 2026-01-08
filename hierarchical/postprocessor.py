@@ -233,6 +233,7 @@ class ResultPostprocessor:
                         child_ref = old_parent.children.pop(item_i[0])
                         item.parent = new_parent_ref
                         new_parent.children.append(child_ref)
+                        iterator = list(self.result.document.iterate_items(with_groups=True))
                     else:
                         raise ItemNotRegisteredAsChildException(item)
                     break
