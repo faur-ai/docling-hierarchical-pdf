@@ -235,8 +235,11 @@ class ResultPostprocessor:
                     child_ref = old_parent.children.pop(item_i[0])
                     item.parent = new_parent_ref
                     new_parent.children.append(child_ref)
-                    # Re-add this item to reprocess with new parent context
-                    to_process.appendleft((item, item_level))
+                    # Rebuild queue with fresh iterator, excluding already-processed items
+                    to_process = deque(
+                        (it, lvl) for it, lvl in self.result.document.iterate_items(with_groups=True)
+                        if it.self_ref not in processed
+                    )
                 else:
                     raise ItemNotRegisteredAsChildException(item)
                 continue  # Skip marking as processed, will process again
