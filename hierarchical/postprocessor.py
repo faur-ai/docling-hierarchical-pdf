@@ -142,15 +142,15 @@ class ResultPostprocessor:
                 profile_file.flush()
 
         # Step 1: HierarchyBuilderMetadata initialization
-        pr1 = cProfile.Profile()
-        pr1.enable()
+        # pr1 = cProfile.Profile()
+        # pr1.enable()
         hbm = HierarchyBuilderMetadata(self.result, self.source, self.raise_on_error)
-        pr1.disable()
-        write_profile(pr1, "Step 1: HierarchyBuilderMetadata init")
+        # pr1.disable()
+        # write_profile(pr1, "Step 1: HierarchyBuilderMetadata init")
 
         # Step 2: TOC inference or creation
-        pr2 = cProfile.Profile()
-        pr2.enable()
+        # pr2 = cProfile.Profile()
+        # pr2.enable()
         header_correction = False
         if len(hbm.toc) > 0:
             root = hbm.infer()
@@ -158,35 +158,37 @@ class ResultPostprocessor:
         else:
             headings = self.get_headers()
             root = create_toc(headings)
-        pr2.disable()
-        write_profile(pr2, "Step 2: TOC inference/creation")
-
+        # pr2.disable()
+        # write_profile(pr2, "Step 2: TOC inference/creation")
+        with open(profile_output, "w") as f:
+            f.write(str(hbm.toc))
         doc = self.result.document
 
         # Step 3: Flatten hierarchy tree
-        pr3 = cProfile.Profile()
-        pr3.enable()
+        # pr3 = cProfile.Profile()
+        # pr3.enable()
         flat_hierarchy = flatten_hierarchy_tree(root, 0)
-        pr3.disable()
-        write_profile(pr3, "Step 3: flatten_hierarchy_tree")
+        # pr3.disable()
+        # write_profile(pr3, "Step 3: flatten_hierarchy_tree")
 
         # Step 4: Build by_ref lookup
-        pr4 = cProfile.Profile()
-        pr4.enable()
+        # pr4 = cProfile.Profile()
+        # pr4.enable()
         by_ref = {el[0].doc_ref: el for el in flat_hierarchy}
-        pr4.disable()
-        write_profile(pr4, "Step 4: by_ref lookup build")
+        # pr4.disable()
+        # write_profile(pr4, "Step 4: by_ref lookup build")
 
         # Step 5: Main iteration loop
-        pr5 = cProfile.Profile()
-        pr5.enable()
+        # pr5 = cProfile.Profile()
+        # pr5.enable()
         current_header = root
         new_parent_ref = None
         processed: set[str] = set()
         last_len_processed = -1
+        iterator = self.result.document.iterate_items(with_groups=True)
         while last_len_processed < len(processed):
             last_len_processed = len(processed)
-            for item, _ in self.result.document.iterate_items(with_groups=True):
+            for item, _ in iterator:
                 if item.self_ref in processed:
                     continue
                 if isinstance(item, SectionHeaderItem) and item.self_ref not in by_ref and header_correction:
@@ -235,7 +237,7 @@ class ResultPostprocessor:
                         raise ItemNotRegisteredAsChildException(item)
                     break
                 processed.add(item.self_ref)
-        pr5.disable()
-        write_profile(pr5, "Step 5: Main iteration loop")
+        # pr5.disable()
+        # write_profile(pr5, "Step 5: Main iteration loop")
         if profile_file:
             profile_file.close()
