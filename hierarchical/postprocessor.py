@@ -185,7 +185,7 @@ class ResultPostprocessor:
         new_parent_ref = None
         processed: set[str] = set()
         last_len_processed = -1
-        iterator = self.result.document.iterate_items(with_groups=True)
+        iterator = list(self.result.document.iterate_items(with_groups=True))
         while last_len_processed < len(processed):
             last_len_processed = len(processed)
             for item, _ in iterator:
