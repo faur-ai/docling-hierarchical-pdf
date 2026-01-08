@@ -1,4 +1,3 @@
-from collections import deque
 import cProfile
 import pstats
 from functools import cached_property
@@ -179,20 +178,13 @@ class ResultPostprocessor:
         # pr4.disable()
         # write_profile(pr4, "Step 4: by_ref lookup build")
 
-        # Step 5: Main iteration loop
+        # Step 5: Main iteration loop (single pass for header leveling only)
         # pr5 = cProfile.Profile()
         # pr5.enable()
         current_header = root
-        new_parent_ref = None
         level = 0
-        processed: set[str] = set()
-        to_process = deque(self.result.document.iterate_items(with_groups=True))
-
-        while to_process:
-            print(len(to_process))
-            item, item_level = to_process.popleft()
-            if item.self_ref in processed:
-                continue
+        for item, _ in self.result.document.iterate_items(with_groups=True):
+            # Convert SectionHeaderItem to TextItem if not in hierarchy
             if isinstance(item, SectionHeaderItem) and item.self_ref not in by_ref and header_correction:
                 text_item = TextItem(
                     label=DocItemLabel.TEXT,
@@ -200,6 +192,8 @@ class ResultPostprocessor:
                 )
                 set_item_in_doc(doc, text_item)
                 item = text_item
+
+            # Handle items that should be headers
             if item.self_ref in by_ref:
                 if not isinstance(item, SectionHeaderItem):
                     if header_correction and isinstance(item, (TextItem, ListItem)):
@@ -215,35 +209,9 @@ class ResultPostprocessor:
                     else:
                         raise ItemInconsitencyException()
                 current_header, level = by_ref[item.self_ref]
-                new_parent_ref = (
-                    RefItem(cref=current_header.parent.doc_ref)
-                    if current_header.parent is not None and current_header.parent.doc_ref is not None
-                    else None
-                )
                 item.level = level
-            elif current_header.doc_ref is not None:
-                if isinstance(item, SectionHeaderItem):
-                    item.level = level + 1
-                new_parent_ref = RefItem(cref=current_header.doc_ref)
-            if new_parent_ref is not None and item.parent is None:
-                raise ItemNotRegisteredAsChildException(item)
-            if new_parent_ref is not None and item.parent is not None and item.parent.cref == doc.body.self_ref:
-                old_parent = item.parent.resolve(doc)
-                new_parent = new_parent_ref.resolve(doc)
-                item_i = [i for i, c in enumerate(old_parent.children) if c.cref == item.self_ref]
-                if item_i:
-                    child_ref = old_parent.children.pop(item_i[0])
-                    item.parent = new_parent_ref
-                    new_parent.children.append(child_ref)
-                    # Rebuild queue with fresh iterator, excluding already-processed items
-                    to_process = deque(
-                        (it, lvl) for it, lvl in self.result.document.iterate_items(with_groups=True)
-                        if it.self_ref not in processed
-                    )
-                else:
-                    raise ItemNotRegisteredAsChildException(item)
-                continue  # Skip marking as processed, will process again
-            processed.add(item.self_ref)
+            elif current_header.doc_ref is not None and isinstance(item, SectionHeaderItem):
+                item.level = level + 1
         # pr5.disable()
         # write_profile(pr5, "Step 5: Main iteration loop")
         if profile_file:
