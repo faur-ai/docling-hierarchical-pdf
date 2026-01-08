@@ -1,5 +1,6 @@
 import cProfile
 import pstats
+import json
 from functools import cached_property
 from io import BytesIO
 from pathlib import PurePath
@@ -168,6 +169,9 @@ class ResultPostprocessor:
         # pr3 = cProfile.Profile()
         # pr3.enable()
         flat_hierarchy = flatten_hierarchy_tree(root, 0)
+
+        with open(profile_output, "w") as f:
+            json.dump(flat_hierarchy, f)
         # pr3.disable()
         # write_profile(pr3, "Step 3: flatten_hierarchy_tree")
 
