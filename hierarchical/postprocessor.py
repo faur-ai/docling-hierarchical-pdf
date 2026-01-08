@@ -183,64 +183,67 @@ class ResultPostprocessor:
         # pr5.enable()
         current_header = root
         new_parent_ref = None
-        processed: set[str] = set()
-        last_len_processed = -1
         iterator = list(self.result.document.iterate_items(with_groups=True))
-        indices_dict = {item.self_ref: (i, _) for i, (item, _) in enumerate(iterator)}
-        while last_len_processed < len(processed):
-            last_len_processed = len(processed)
-            for i, (item, _) in enumerate(iterator):
-                if item.self_ref in processed:
-                    continue
-                if isinstance(item, SectionHeaderItem) and item.self_ref not in by_ref and header_correction:
-                    text_item = TextItem(
-                        label=DocItemLabel.TEXT,
-                        **{k: v for k, v in item.model_dump().items() if k != "label" and k in TextItem.model_fields},
-                    )
-                    set_item_in_doc(doc, text_item)
-                    item = text_item
-                if item.self_ref in by_ref:
-                    if not isinstance(item, SectionHeaderItem):
-                        if header_correction and isinstance(item, (TextItem, ListItem)):
-                            header_item = SectionHeaderItem(**{
-                                k: v
-                                for k, v in item.model_dump().items()
-                                if k != "label" and k in SectionHeaderItem.model_fields
-                            })
-                            if isinstance(item, ListItem):
-                                header_item.text = header_item.orig
-                            set_item_in_doc(doc, header_item)
-                            item = header_item
-                        else:
-                            raise ItemInconsitencyException()
-                    current_header, level = by_ref[item.self_ref]
-                    new_parent_ref = (
-                        RefItem(cref=current_header.parent.doc_ref)
-                        if current_header.parent is not None and current_header.parent.doc_ref is not None
-                        else None
-                    )
-                    item.level = level
-                elif current_header.doc_ref is not None:
-                    if isinstance(item, SectionHeaderItem):
-                        item.level = level + 1
-                    new_parent_ref = RefItem(cref=current_header.doc_ref)
-                if new_parent_ref is not None and item.parent is None:
-                    raise ItemNotRegisteredAsChildException(item)
-                if new_parent_ref is not None and item.parent is not None and item.parent.cref == doc.body.self_ref:
-                    old_parent = item.parent.resolve(doc)
-                    new_parent = new_parent_ref.resolve(doc)
-                    item_i = [i for i, c in enumerate(old_parent.children) if c.cref == item.self_ref]
-                    if item_i:
-                        child_ref = old_parent.children.pop(item_i[0])
-                        item.parent = new_parent_ref
-                        new_parent.children.append(child_ref)
-                        iterator[i] = (item, _)
-                        iterator[indices_dict[old_parent.self_ref][0]] = (old_parent, indices_dict[old_parent.self_ref][1])
-                        iterator[indices_dict[new_parent.self_ref][0]] = (new_parent, indices_dict[new_parent.self_ref][1])
+
+        # First pass: process items and collect all reparenting moves
+        moves: list[tuple[DocItem, RefItem, RefItem]] = []  # (item, old_parent_ref, new_parent_ref)
+
+        for item, _ in iterator:
+            if isinstance(item, SectionHeaderItem) and item.self_ref not in by_ref and header_correction:
+                text_item = TextItem(
+                    label=DocItemLabel.TEXT,
+                    **{k: v for k, v in item.model_dump().items() if k != "label" and k in TextItem.model_fields},
+                )
+                set_item_in_doc(doc, text_item)
+                item = text_item
+            if item.self_ref in by_ref:
+                if not isinstance(item, SectionHeaderItem):
+                    if header_correction and isinstance(item, (TextItem, ListItem)):
+                        header_item = SectionHeaderItem(**{
+                            k: v
+                            for k, v in item.model_dump().items()
+                            if k != "label" and k in SectionHeaderItem.model_fields
+                        })
+                        if isinstance(item, ListItem):
+                            header_item.text = header_item.orig
+                        set_item_in_doc(doc, header_item)
+                        item = header_item
                     else:
-                        raise ItemNotRegisteredAsChildException(item)
-                    break
-                processed.add(item.self_ref)
+                        raise ItemInconsitencyException()
+                current_header, level = by_ref[item.self_ref]
+                new_parent_ref = (
+                    RefItem(cref=current_header.parent.doc_ref)
+                    if current_header.parent is not None and current_header.parent.doc_ref is not None
+                    else None
+                )
+                item.level = level
+            elif current_header.doc_ref is not None:
+                if isinstance(item, SectionHeaderItem):
+                    item.level = level + 1
+                new_parent_ref = RefItem(cref=current_header.doc_ref)
+            if new_parent_ref is not None and item.parent is None:
+                raise ItemNotRegisteredAsChildException(item)
+            if new_parent_ref is not None and item.parent is not None and item.parent.cref == doc.body.self_ref:
+                # Collect the move instead of applying immediately
+                moves.append((item, item.parent, new_parent_ref))
+
+        # Second pass: apply all reparenting moves
+        # Build index of children positions for efficient removal
+        body_children_index = {c.cref: i for i, c in enumerate(doc.body.children)}
+
+        # Process moves in reverse order of original index to maintain valid indices during removal
+        indexed_moves = [(body_children_index.get(item.self_ref, -1), item, old_ref, new_ref) 
+                         for item, old_ref, new_ref in moves]
+        indexed_moves.sort(reverse=True, key=lambda x: x[0])
+
+        for idx, item, old_parent_ref, new_parent_ref in indexed_moves:
+            if idx < 0:
+                raise ItemNotRegisteredAsChildException(item)
+            old_parent = old_parent_ref.resolve(doc)
+            new_parent = new_parent_ref.resolve(doc)
+            child_ref = old_parent.children.pop(idx)
+            item.parent = new_parent_ref
+            new_parent.children.append(child_ref)
         # pr5.disable()
         # write_profile(pr5, "Step 5: Main iteration loop")
         if profile_file:
