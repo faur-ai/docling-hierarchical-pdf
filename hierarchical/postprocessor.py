@@ -171,7 +171,18 @@ class ResultPostprocessor:
         flat_hierarchy = flatten_hierarchy_tree(root, 0)
 
         with open(profile_output, "w") as f:
-            json.dump(flat_hierarchy, f)
+            json.dump(
+                [
+                    {
+                        "text": node.text,
+                        "doc_ref": node.doc_ref,
+                        "level": level,
+                    }
+                    for node, level in flat_hierarchy
+                ],
+                f,
+                indent=4,
+            )
         # pr3.disable()
         # write_profile(pr3, "Step 3: flatten_hierarchy_tree")
 
