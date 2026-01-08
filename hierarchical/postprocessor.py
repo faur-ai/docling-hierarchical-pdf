@@ -186,9 +186,10 @@ class ResultPostprocessor:
         processed: set[str] = set()
         last_len_processed = -1
         iterator = list(self.result.document.iterate_items(with_groups=True))
+        indices_dict = {item.self_ref: (i, _) for i, (item, _) in enumerate(iterator)}
         while last_len_processed < len(processed):
             last_len_processed = len(processed)
-            for item, _ in iterator:
+            for i, (item, _) in enumerate(iterator):
                 if item.self_ref in processed:
                     continue
                 if isinstance(item, SectionHeaderItem) and item.self_ref not in by_ref and header_correction:
@@ -233,7 +234,9 @@ class ResultPostprocessor:
                         child_ref = old_parent.children.pop(item_i[0])
                         item.parent = new_parent_ref
                         new_parent.children.append(child_ref)
-                        iterator = list(self.result.document.iterate_items(with_groups=True))
+                        iterator[i] = (item, _)
+                        iterator[indices_dict[old_parent.self_ref]] = (old_parent, indices_dict[old_parent.self_ref][1])
+                        iterator[indices_dict[new_parent.self_ref]] = (new_parent, indices_dict[new_parent.self_ref][1])
                     else:
                         raise ItemNotRegisteredAsChildException(item)
                     break
