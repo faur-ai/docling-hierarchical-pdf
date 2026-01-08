@@ -235,8 +235,8 @@ class ResultPostprocessor:
                         item.parent = new_parent_ref
                         new_parent.children.append(child_ref)
                         iterator[i] = (item, _)
-                        iterator[indices_dict[old_parent.self_ref]] = (old_parent, indices_dict[old_parent.self_ref][1])
-                        iterator[indices_dict[new_parent.self_ref]] = (new_parent, indices_dict[new_parent.self_ref][1])
+                        iterator[indices_dict[old_parent.self_ref][0]] = (old_parent, indices_dict[old_parent.self_ref][1])
+                        iterator[indices_dict[new_parent.self_ref][0]] = (new_parent, indices_dict[new_parent.self_ref][1])
                     else:
                         raise ItemNotRegisteredAsChildException(item)
                     break
