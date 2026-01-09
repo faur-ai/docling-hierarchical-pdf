@@ -134,13 +134,13 @@ class ResultPostprocessor:
     def process(self, profile_output: Optional[str] = None) -> None:  # noqa: C901
         profile_file = open(profile_output, "w") if profile_output else None
 
-        def write_profile(profiler: cProfile.Profile, step_name: str) -> None:
-            if profile_file:
-                profile_file.write(f"\n{'='*70}\n")
-                profile_file.write(f"PROFILE: {step_name}\n")
-                profile_file.write(f"{'='*70}\n")
-                pstats.Stats(profiler, stream=profile_file).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
-                profile_file.flush()
+        # def write_profile(profiler: cProfile.Profile, step_name: str) -> None:
+        #     if profile_file:
+        #         profile_file.write(f"\n{'='*70}\n")
+        #         profile_file.write(f"PROFILE: {step_name}\n")
+        #         profile_file.write(f"{'='*70}\n")
+        #         pstats.Stats(profiler, stream=profile_file).strip_dirs().sort_stats(SortKey.CUMULATIVE).print_stats(10)
+        #         profile_file.flush()
 
         # Step 1: HierarchyBuilderMetadata initialization
         # pr1 = cProfile.Profile()
@@ -169,20 +169,20 @@ class ResultPostprocessor:
         # pr3 = cProfile.Profile()
         # pr3.enable()
         flat_hierarchy = flatten_hierarchy_tree(root, 0)
-
-        with open(profile_output, "w") as f:
-            json.dump(
-                [
-                    {
-                        "text": node.text,
-                        "doc_ref": node.doc_ref,
-                        "level": level,
-                    }
-                    for node, level in flat_hierarchy
-                ],
-                f,
-                indent=4,
-            )
+        if profile_output:
+            with open(profile_output, "w") as f:
+                json.dump(
+                    [
+                        {
+                            "text": node.text,
+                            "doc_ref": node.doc_ref,
+                            "level": level,
+                        }
+                        for node, level in flat_hierarchy
+                    ],
+                    f,
+                    indent=4,
+                )
         # pr3.disable()
         # write_profile(pr3, "Step 3: flatten_hierarchy_tree")
 
