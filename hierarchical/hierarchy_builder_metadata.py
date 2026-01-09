@@ -94,10 +94,13 @@ class HierarchyBuilderMetadata:
                     simple=False
                 )  # gives a list of lists [<hierarchy level>, <Header name>, <pdf-page number>, <dict of additional information including position of the bookmark>]
                 # pages_dicts = {}
-                for level, title, page, add_info in toc:
+                for i, (level, title, page, add_info) in enumerate(toc):
                     # alternative
                     rects = doc[page - 1].search_for(title)
-                    # doc[page - 1].get_pixmap(clip=rects[0]).save("rect_x.png")
+                    output_dir = "/".join(self.source.split("/")[:-2]) + "/output"
+                    Path(output_dir).mkdir(parents=True, exist_ok=True)
+                    if rects:
+                        doc[page - 1].get_pixmap(clip=rects[0]).save(f"{output_dir}/toc_{i}.png")
                     this_bbox = None
                     for b in rects:
                         if this_bbox is None:
