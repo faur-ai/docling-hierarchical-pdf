@@ -153,16 +153,21 @@ class ResultPostprocessor:
         # pr2 = cProfile.Profile()
         # pr2.enable()
         header_correction = False
-        if len(hbm.toc) > 0:
-            root = hbm.infer()
-            header_correction = True
-        else:
+        try:
+            if len(hbm.toc) > 0:
+                root = hbm.infer()
+                header_correction = True
+            else:
+                raise ValueError("No TOC entries found.")
+        except Exception as e:
+            if e == ValueError("No TOC entries found."):
+                print("No TOC entries found, creating TOC from headers.")
+            else:
+                print(f"Error during TOC inference: {e}. Creating TOC from headers.")
             headings = self.get_headers()
             root = create_toc(headings)
         # pr2.disable()
         # write_profile(pr2, "Step 2: TOC inference/creation")
-        with open(profile_output, "w") as f:
-            f.write(str(hbm.toc))
         doc = self.result.document
 
         # Step 3: Flatten hierarchy tree

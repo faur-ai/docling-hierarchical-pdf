@@ -182,11 +182,8 @@ class HierarchyBuilderMetadata:
                     this_item = item
                     break
             if this_item is None:
-                if self.raise_on_error:
-                    raise HeaderNotFoundException(add_info)
-                else:
-                    logger.warning(HeaderNotFoundException(add_info))
-                    continue
+                raise HeaderNotFoundException(add_info)
+                
 
             if current.level_toc is None or level > current.level_toc:
                 # print(f"gt: {this_fs_level, this_style_attr} VS: {current.level_fontsize, current.style_attrs}")
