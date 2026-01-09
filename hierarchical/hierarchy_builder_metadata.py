@@ -96,6 +96,7 @@ class HierarchyBuilderMetadata:
                 # pages_dicts = {}
                 for i, (level, title, page, add_info) in enumerate(toc):
                     # alternative
+                    print(f"Processing TOC item: level={level}, title='{title}', page={page}, add_info={add_info}")
                     rects = doc[page - 1].search_for(title)
                     output_dir = "/".join(self.source.split("/")[:-2]) + "/output"
                     Path(output_dir).mkdir(parents=True, exist_ok=True)
