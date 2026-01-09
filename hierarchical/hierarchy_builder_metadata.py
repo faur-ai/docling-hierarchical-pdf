@@ -94,6 +94,8 @@ class HierarchyBuilderMetadata:
                     simple=False
                 )  # gives a list of lists [<hierarchy level>, <Header name>, <pdf-page number>, <dict of additional information including position of the bookmark>]
                 # pages_dicts = {}
+                for level, title, page, add_info in toc:
+                    print(f"TOC item: level={level}, title='{title}', page={page}, add_info={add_info}")
                 for i, (level, title, page, add_info) in enumerate(toc):
                     # alternative
                     print(f"Processing TOC item: level={level}, title='{title}', page={page}, add_info={add_info}")
