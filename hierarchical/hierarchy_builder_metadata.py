@@ -171,7 +171,7 @@ class HierarchyBuilderMetadata:
         doc = self.conv_res.document
         wrong_headers_count = 0
         header_count = len(heading_to_level)
-        for level, title, page, add_info in heading_to_level:
+        for level, title, page, _ in heading_to_level:
             new_parent = None
             this_item = None
             # identify the text item in the document
@@ -187,6 +187,7 @@ class HierarchyBuilderMetadata:
                 logger.warning(
                     f"WARNING: Could not find header '{title}' on page {page} in the document items. ({wrong_headers_count}/{header_count} headers missing)"
                 )
+                continue
                 #raise HeaderNotFoundException(add_info)
                 
 
