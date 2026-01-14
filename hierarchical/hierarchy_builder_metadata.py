@@ -169,7 +169,8 @@ class HierarchyBuilderMetadata:
         root = HierarchicalHeader()
         current = root
         doc = self.conv_res.document
-
+        wrong_headers_count = 0
+        header_count = len(heading_to_level)
         for level, title, page, add_info in heading_to_level:
             new_parent = None
             this_item = None
@@ -182,7 +183,11 @@ class HierarchyBuilderMetadata:
                     this_item = item
                     break
             if this_item is None:
-                raise HeaderNotFoundException(add_info)
+                wrong_headers_count += 1
+                logger.warning(
+                    f"WARNING: Could not find header '{title}' on page {page} in the document items. ({wrong_headers_count}/{header_count} headers missing)"
+                )
+                #raise HeaderNotFoundException(add_info)
                 
 
             if current.level_toc is None or level > current.level_toc:
@@ -208,5 +213,8 @@ class HierarchyBuilderMetadata:
             )
             new_parent.children.append(new_obj)
             current = new_obj
+
+        if wrong_headers_count > 0.9 * header_count:
+            raise HeaderNotFoundException(heading_to_level)
 
         return root
