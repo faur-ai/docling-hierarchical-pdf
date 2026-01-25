@@ -273,7 +273,7 @@ class DocumentHierarchyBuilder:
             from cuml.cluster import DBSCAN as cuDBSCAN
             from cuml.preprocessing import StandardScaler as cuStandardScaler
             from cuml.metrics.cluster import silhouette_score as cu_silhouette_score
-            raise ImportError("Force CPU fallback for testing.")
+            #raise ImportError("Force CPU fallback for testing.")
         except cp.cuda.runtime.CUDARuntimeError:
             print("WARNING: CUDA Runtime Error - falling back to CPU DBSCAN.")
             return self._cluster_headings_cpu()
