@@ -264,17 +264,26 @@ class DocumentHierarchyBuilder:
         Uses the same DBSCAN algorithm and grid search as the CPU version,
         but runs on NVIDIA GPU via RAPIDS cuML for speedup.
         """
-        import cupy as cp
         try:
+            import cupy as cp
             cp.cuda.Device(0).use()
             # Clear any stale memory
             mempool = cp.get_default_memory_pool()
             mempool.free_all_blocks()
+            from cuml.cluster import DBSCAN as cuDBSCAN
+            from cuml.preprocessing import StandardScaler as cuStandardScaler
+            from cuml.metrics.cluster import silhouette_score as cu_silhouette_score
+            raise ImportError("Force CPU fallback for testing.")
         except cp.cuda.runtime.CUDARuntimeError:
-            raise RuntimeError("No GPU available for cuML clustering.")
-        from cuml.cluster import DBSCAN as cuDBSCAN
-        from cuml.preprocessing import StandardScaler as cuStandardScaler
-        from cuml.metrics.cluster import silhouette_score as cu_silhouette_score
+            print("WARNING: CUDA Runtime Error - falling back to CPU DBSCAN.")
+            return self._cluster_headings_cpu()
+        except ImportError:
+            print("WARNING: cuML not available - falling back to CPU DBSCAN.")
+            return self._cluster_headings_cpu()
+        except Exception as e:
+            print(f"WARNING: Unexpected error initializing cuML: {e} - falling back to CPU DBSCAN.")
+            return self._cluster_headings_cpu()
+            
  
         if len(self.headings) < 2:
             return dict.fromkeys(range(len(self.headings)), 1)
@@ -343,6 +352,8 @@ class DocumentHierarchyBuilder:
         """
         # Use GPU if available
         return self._cluster_headings_gpu()
+    
+    def _cluster_headings_cpu(self) -> dict[int, int]:
 
         # CPU fallback: original DBSCAN implementation with grid search
         style_features = self.style_features
